@@ -181,29 +181,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const BAR_ID = '1';
 
-        function populateFolder(folderId, nodes) {
+        async function populateFolder(folderId, nodes) {
           for (const node of nodes) {
             if (node.url) {
-              chrome.bookmarks.create({ parentId: folderId, title: node.title, url: node.url });
+              await new Promise(resolve => chrome.bookmarks.create({ parentId: folderId, title: node.title, url: node.url }, resolve));
             } else if (node.children && node.children.length > 0) {
-              chrome.bookmarks.create({ parentId: folderId, title: node.title }, (newFolder) => {
-                populateFolder(newFolder.id, node.children);
-              });
+              const newFolder = await new Promise(resolve => chrome.bookmarks.create({ parentId: folderId, title: node.title }, resolve));
+              await populateFolder(newFolder.id, node.children);
             }
           }
         }
 
-
         chrome.bookmarks.getChildren(BAR_ID, (existing) => {
           Promise.all(existing.map(c => new Promise(resolve => {
             chrome.bookmarks.removeTree(c.id, resolve);
-          }))).then(() => {
-            for (const topNode of data.bookmarks) {
-              if (isBarNode(topNode)) {
-                populateFolder(BAR_ID, topNode.children || []);
-              }
-            }
+          }))).then(async () => {
             const barNode = data.bookmarks.find(isBarNode);
+            if (barNode) {
+              showStatus(`Importing bookmarks, please wait…`, 'info');
+              await populateFolder(BAR_ID, barNode.children || []);
+            }
             const { bookmarks: bCount, folders: fCount } = countBookmarks(barNode ? barNode.children || [] : []);
             showStatus(`Downloaded "${profile}": ${bCount} bookmarks, ${fCount} folders.`, 'success');
             setSyncing(false);
