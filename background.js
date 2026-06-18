@@ -42,7 +42,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         return;
       }
 
-      const BAR_ID = '1';
+      const tree = await new Promise(resolve => chrome.bookmarks.getTree(resolve));
+      const rootChildren = tree[0].children || [];
+      const localBar = rootChildren.find(n => !n.url && (BAR_TITLES.has(n.title) || n.id === '1'));
+      const BAR_ID = localBar ? localBar.id : '1';
+
       const existing = await new Promise(resolve => chrome.bookmarks.getChildren(BAR_ID, resolve)) || [];
       await Promise.all(existing.map(c => new Promise(resolve => chrome.bookmarks.removeTree(c.id, resolve))));
 
