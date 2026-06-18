@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { width: 250px; font-family: sans-serif; padding: 10px; }
+    input { width: 90%; margin-bottom: 8px; padding: 4px; }
+    button { width: 100%; padding: 6px; margin-top: 4px; cursor: pointer; }
+    .status { font-size: 12px; color: green; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h3>Edge Profile Sync</h3>
+  <input type="text" id="apiKey" placeholder="JSONBin Secret Key">
+  <input type="text" id="binId" placeholder="JSONBin Bin ID">
+  <button id="saveConfig">Save & Link Profile</button>
+  <hr>
+  <button id="syncUp">↑ Upload Bookmarks</button>
+  <button id="syncDown">↓ Download Bookmarks</button>
+  <div id="status" class="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
