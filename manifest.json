@@ -1,15 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Brave-Style Edge Sync",
+  "name": "SyB - Sync bookmarks",
   "version": "1.0",
   "description": "Syncs a specific bookmark folder across Edge profiles using an ID.",
   "permissions": [
     "bookmarks",
     "storage"
   ],
-  "background": {
-    "service_worker": "background.js"
-  },
   "action": {
     "default_popup": "popup.html"
   }
