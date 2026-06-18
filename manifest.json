@@ -1,11 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "SyB - Sync bookmarks",
-  "version": "1.0",
-  "description": "Syncs a specific bookmark folder across Edge profiles using an ID.",
+  "name": "SyncFav",
+  "version": "1.0.0",
+  "description": "Sync bookmarks across Brave, Chrome, and Edge using your own VPS.",
   "permissions": [
     "bookmarks",
     "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html"

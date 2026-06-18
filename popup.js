@@ -1,116 +1,135 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const apiKeyInput = document.getElementById('apiKey');
-  const binIdInput = document.getElementById('binId');
-  const saveBtn = document.getElementById('saveConfig');
-  const syncUpBtn = document.getElementById('syncUp');
-  const syncDownBtn = document.getElementById('syncDown');
-  const statusDiv = document.getElementById('status');
+  const vpsUrlInput   = document.getElementById('vpsUrl');
+  const syncTokenInput = document.getElementById('syncToken');
+  const saveBtn       = document.getElementById('saveConfig');
+  const syncUpBtn     = document.getElementById('syncUp');
+  const syncDownBtn   = document.getElementById('syncDown');
+  const statusDiv     = document.getElementById('status');
+  const connDot       = document.getElementById('connDot');
+  const connLabel     = document.getElementById('connLabel');
 
-  function showStatus(text, color) {
+  function showStatus(text, type) {
     statusDiv.textContent = text;
-    statusDiv.style.color = color || 'black';
+    statusDiv.className = 'status ' + (type || 'info');
   }
 
-  // 1. Startup: Load saved configuration
-  chrome.storage.local.get(['apiKey', 'binId'], (result) => {
-    if (result.apiKey) apiKeyInput.value = result.apiKey;
-    if (result.binId) binIdInput.value = result.binId;
-    if (result.apiKey && result.binId) {
-      showStatus('Keys loaded. Ready.', 'green');
-    }
+  function setConnected(url) {
+    connDot.classList.add('connected');
+    const display = url.replace(/^https?:\/\//, '');
+    connLabel.textContent = display.length > 30 ? display.slice(0, 30) + '…' : display;
+  }
+
+  function setDisconnected() {
+    connDot.classList.remove('connected');
+    connLabel.textContent = 'Not configured';
+  }
+
+  function setSyncing(on) {
+    syncUpBtn.disabled   = on;
+    syncDownBtn.disabled = on;
+  }
+
+  // Load saved config on open
+  chrome.storage.local.get(['vpsUrl', 'syncToken'], (result) => {
+    if (result.vpsUrl)    vpsUrlInput.value    = result.vpsUrl;
+    if (result.syncToken) syncTokenInput.value = result.syncToken;
+    if (result.vpsUrl && result.syncToken) setConnected(result.vpsUrl);
   });
 
-  // 2. Save Configuration
+  // Save config
   saveBtn.addEventListener('click', () => {
-    const apiKey = apiKeyInput.value.trim();
-    const binId = binIdInput.value.trim();
+    const vpsUrl    = vpsUrlInput.value.trim().replace(/\/$/, '');
+    const syncToken = syncTokenInput.value.trim();
 
-    if (!apiKey || !binId) {
-      showStatus('Error: Fields cannot be empty!', 'red');
+    if (!vpsUrl || !syncToken) {
+      showStatus('Both VPS URL and token are required.', 'error');
       return;
     }
 
-    chrome.storage.local.set({ apiKey, binId }, () => {
-      showStatus('Configuration Saved!', 'green');
+    chrome.storage.local.set({ vpsUrl, syncToken }, () => {
+      setConnected(vpsUrl);
+      showStatus('Configuration saved.', 'success');
     });
   });
 
-  // 3. Sync Up: Upload local bookmarks to JSONBin
+  // Upload bookmarks
   syncUpBtn.addEventListener('click', () => {
-    chrome.storage.local.get(['apiKey', 'binId'], (config) => {
-      if (!config.apiKey || !config.binId) {
-        showStatus('Please configure keys first!', 'red');
+    chrome.storage.local.get(['vpsUrl', 'syncToken'], (config) => {
+      if (!config.vpsUrl || !config.syncToken) {
+        showStatus('Save your server configuration first.', 'error');
         return;
       }
 
-      showStatus('Uploading...', 'orange');
+      setSyncing(true);
+      showStatus('Reading bookmarks…', 'info');
 
       chrome.bookmarks.getTree((rootNodes) => {
-        fetch(`https://api.jsonbin.io/v3/b/${config.binId}`, {
+        const bookmarks = rootNodes[0].children;
+
+        fetch(`${config.vpsUrl}/bookmarks`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            // By passing your key strictly as X-Access-Key, JSONBin will authorize the sync 
-            'X-Access-Key': config.apiKey
+            'Authorization': `Bearer ${config.syncToken}`
           },
-          body: JSON.stringify({ bookmarks: rootNodes[0].children })
+          body: JSON.stringify({ bookmarks })
         })
-        .then(async response => {
-          if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            const errMsg = errData.message || `Server status ${response.status}`;
-            throw new Error(errMsg);
+        .then(async (res) => {
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `Server returned ${res.status}`);
           }
-          return response.json();
+          return res.json();
         })
         .then(() => {
-          showStatus('Uploaded successfully!', 'green');
+          showStatus('Bookmarks uploaded successfully.', 'success');
         })
-        .catch(error => {
-          showStatus(`Upload failed: ${error.message}`, 'red');
-        });
+        .catch((err) => {
+          showStatus(`Upload failed: ${err.message}`, 'error');
+        })
+        .finally(() => setSyncing(false));
       });
     });
   });
 
-  // 4. Sync Down: Download bookmarks from JSONBin
+  // Download bookmarks
   syncDownBtn.addEventListener('click', () => {
-    chrome.storage.local.get(['apiKey', 'binId'], (config) => {
-      if (!config.apiKey || !config.binId) {
-        showStatus('Please configure keys first!', 'red');
+    chrome.storage.local.get(['vpsUrl', 'syncToken'], (config) => {
+      if (!config.vpsUrl || !config.syncToken) {
+        showStatus('Save your server configuration first.', 'error');
         return;
       }
 
-      showStatus('Downloading...', 'orange');
+      setSyncing(true);
+      showStatus('Downloading from server…', 'info');
 
-      fetch(`https://api.jsonbin.io/v3/b/${config.binId}/latest`, {
+      fetch(`${config.vpsUrl}/bookmarks`, {
         method: 'GET',
         headers: {
-          'X-Access-Key': config.apiKey
+          'Authorization': `Bearer ${config.syncToken}`
         }
       })
-      .then(async response => {
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
-          const errMsg = errData.message || `Server status ${response.status}`;
-          throw new Error(errMsg);
+      .then(async (res) => {
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `Server returned ${res.status}`);
         }
-        return response.json();
+        return res.json();
       })
-      .then(data => {
-        const incoming = data.record.bookmarks;
-        if (!incoming || incoming.length === 0) {
-          showStatus('Cloud vault is empty.', 'red');
+      .then((data) => {
+        if (!data.bookmarks || data.bookmarks.length === 0) {
+          showStatus('No bookmarks found on server.', 'error');
+          setSyncing(false);
           return;
         }
 
         chrome.bookmarks.getTree((rootNodes) => {
-          let existingFolder = null;
-          
+          let syncFolder = null;
+
           function findFolder(nodes) {
-            for (let node of nodes) {
-              if (!node.url && node.title === 'Synced Favorites') {
-                existingFolder = node;
+            for (const node of nodes) {
+              if (!node.url && node.title === 'SyncFav') {
+                syncFolder = node;
                 return;
               }
               if (node.children) findFolder(node.children);
@@ -118,40 +137,55 @@ document.addEventListener('DOMContentLoaded', () => {
           }
           findFolder(rootNodes);
 
-          if (existingFolder) {
-            chrome.bookmarks.getChildren(existingFolder.id, (children) => {
-              const promises = children.map(child => chrome.bookmarks.removeTree(child.id));
-              Promise.all(promises).then(() => {
-                incoming.forEach(node => importNodes(node, existingFolder.id));
-                showStatus('Downloaded & Updated!', 'green');
-              });
+          function populateFolder(folderId, nodes) {
+            for (const node of nodes) {
+              if (node.url) {
+                chrome.bookmarks.create({ parentId: folderId, title: node.title, url: node.url });
+              } else if (node.children && node.children.length > 0) {
+                chrome.bookmarks.create({ parentId: folderId, title: node.title }, (newFolder) => {
+                  populateFolder(newFolder.id, node.children);
+                });
+              }
+            }
+          }
+
+          function doImport(folderId) {
+            for (const topNode of data.bookmarks) {
+              if (!topNode.url && topNode.children) {
+                // flatten top-level browser folders (Bookmarks bar, Other bookmarks)
+                populateFolder(folderId, topNode.children);
+              } else {
+                populateFolder(folderId, [topNode]);
+              }
+            }
+            showStatus('Bookmarks downloaded and merged.', 'success');
+            setSyncing(false);
+          }
+
+          if (syncFolder) {
+            chrome.bookmarks.getChildren(syncFolder.id, (children) => {
+              Promise.all(children.map(c => new Promise(resolve => {
+                chrome.bookmarks.removeTree(c.id, resolve);
+              }))).then(() => doImport(syncFolder.id));
             });
           } else {
-            chrome.bookmarks.create({ title: 'Synced Favorites' }, (newFolder) => {
-              incoming.forEach(node => importNodes(node, newFolder.id));
-              showStatus('Downloaded & Merged!', 'green');
+            chrome.bookmarks.create({ title: 'SyncFav' }, (newFolder) => {
+              doImport(newFolder.id);
             });
           }
         });
       })
-      .catch(error => {
-        showStatus(`Download failed: ${error.message}`, 'red');
+      .catch((err) => {
+        showStatus(`Download failed: ${err.message}`, 'error');
+        setSyncing(false);
       });
     });
   });
 
-  // 5. Recursive node processor
-  function importNodes(node, parentId) {
-    if (node.url) {
-      chrome.bookmarks.create({ parentId: parentId, title: node.title, url: node.url });
-    } else if (node.children && node.children.length > 0) {
-      if (node.title === "" || node.title === "Favorites bar" || node.title === "Other bookmarks") {
-        node.children.forEach(child => importNodes(child, parentId));
-      } else {
-        chrome.bookmarks.create({ parentId: parentId, title: node.title }, (newParent) => {
-          node.children.forEach(child => importNodes(child, newParent.id));
-        });
-      }
+  // Deselect text inputs on click outside
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('input')) {
+      syncTokenInput.type = 'password';
     }
-  }
+  });
 });
