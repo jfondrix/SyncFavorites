@@ -123,56 +123,35 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
 
-        chrome.bookmarks.getTree((rootNodes) => {
-          let syncFolder = null;
+        // Bookmarks bar has a fixed parentId of "1" in Chromium browsers
+        const BAR_ID = '1';
 
-          function findFolder(nodes) {
-            for (const node of nodes) {
-              if (!node.url && node.title === 'SyncFav') {
-                syncFolder = node;
-                return;
-              }
-              if (node.children) findFolder(node.children);
+        function populateFolder(folderId, nodes) {
+          for (const node of nodes) {
+            if (node.url) {
+              chrome.bookmarks.create({ parentId: folderId, title: node.title, url: node.url });
+            } else if (node.children && node.children.length > 0) {
+              chrome.bookmarks.create({ parentId: folderId, title: node.title }, (newFolder) => {
+                populateFolder(newFolder.id, node.children);
+              });
             }
           }
-          findFolder(rootNodes);
+        }
 
-          function populateFolder(folderId, nodes) {
-            for (const node of nodes) {
-              if (node.url) {
-                chrome.bookmarks.create({ parentId: folderId, title: node.title, url: node.url });
-              } else if (node.children && node.children.length > 0) {
-                chrome.bookmarks.create({ parentId: folderId, title: node.title }, (newFolder) => {
-                  populateFolder(newFolder.id, node.children);
-                });
-              }
-            }
-          }
-
-          function doImport(folderId) {
+        // Clear existing bookmarks bar contents then repopulate
+        chrome.bookmarks.getChildren(BAR_ID, (existing) => {
+          Promise.all(existing.map(c => new Promise(resolve => {
+            chrome.bookmarks.removeTree(c.id, resolve);
+          }))).then(() => {
             for (const topNode of data.bookmarks) {
-              if (!topNode.url && topNode.children) {
-                // flatten top-level browser folders (Bookmarks bar, Other bookmarks)
-                populateFolder(folderId, topNode.children);
-              } else {
-                populateFolder(folderId, [topNode]);
+              // Upload sends the full tree; find the bookmarks bar node and use its children
+              if (!topNode.url && (topNode.title === 'Bookmarks bar' || topNode.title === 'Favorites bar' || topNode.id === '1')) {
+                populateFolder(BAR_ID, topNode.children || []);
               }
             }
-            showStatus('Bookmarks downloaded and merged.', 'success');
+            showStatus('Bookmarks bar synced successfully.', 'success');
             setSyncing(false);
-          }
-
-          if (syncFolder) {
-            chrome.bookmarks.getChildren(syncFolder.id, (children) => {
-              Promise.all(children.map(c => new Promise(resolve => {
-                chrome.bookmarks.removeTree(c.id, resolve);
-              }))).then(() => doImport(syncFolder.id));
-            });
-          } else {
-            chrome.bookmarks.create({ title: 'SyncFav' }, (newFolder) => {
-              doImport(newFolder.id);
-            });
-          }
+          });
         });
       })
       .catch((err) => {
