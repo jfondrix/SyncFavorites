@@ -159,56 +159,21 @@ document.addEventListener('DOMContentLoaded', () => {
       setSyncing(true);
       showStatus('Downloading from server…', 'info');
 
-      fetch(`${config.vpsUrl}/bookmarks/${profile}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${config.syncToken}`
-        }
-      })
-      .then(async (res) => {
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || `Server returned ${res.status}`);
-        }
-        return res.json();
-      })
-      .then((data) => {
-        if (!data.bookmarks || data.bookmarks.length === 0) {
-          showStatus(`No bookmarks found for profile "${profile}".`, 'error');
+      showStatus('Importing bookmarks, please wait…', 'info');
+
+      chrome.runtime.sendMessage({
+        action: 'download',
+        vpsUrl: config.vpsUrl,
+        syncToken: config.syncToken,
+        profile
+      }, (response) => {
+        if (!response || !response.ok) {
+          showStatus(`Download failed: ${response ? response.error : 'No response from background'}`, 'error');
           setSyncing(false);
           return;
         }
-
-        const BAR_ID = '1';
-
-        async function populateFolder(folderId, nodes) {
-          for (const node of nodes) {
-            if (node.url) {
-              await new Promise(resolve => chrome.bookmarks.create({ parentId: folderId, title: node.title, url: node.url }, resolve));
-            } else if (node.children && node.children.length > 0) {
-              const newFolder = await new Promise(resolve => chrome.bookmarks.create({ parentId: folderId, title: node.title }, resolve));
-              await populateFolder(newFolder.id, node.children);
-            }
-          }
-        }
-
-        chrome.bookmarks.getChildren(BAR_ID, (existing) => {
-          Promise.all(existing.map(c => new Promise(resolve => {
-            chrome.bookmarks.removeTree(c.id, resolve);
-          }))).then(async () => {
-            const barNode = data.bookmarks.find(isBarNode);
-            if (barNode) {
-              showStatus(`Importing bookmarks, please wait…`, 'info');
-              await populateFolder(BAR_ID, barNode.children || []);
-            }
-            const { bookmarks: bCount, folders: fCount } = countBookmarks(barNode ? barNode.children || [] : []);
-            showStatus(`Downloaded "${profile}": ${bCount} bookmarks, ${fCount} folders.`, 'success');
-            setSyncing(false);
-          });
-        });
-      })
-      .catch((err) => {
-        showStatus(`Download failed: ${err.message}`, 'error');
+        const { bookmarks: bCount, folders: fCount } = countBookmarks(response.barNode ? response.barNode.children || [] : []);
+        showStatus(`Downloaded "${profile}": ${bCount} bookmarks, ${fCount} folders.`, 'success');
         setSyncing(false);
       });
     });
