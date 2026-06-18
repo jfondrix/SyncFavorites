@@ -49,6 +49,9 @@ document.addEventListener('DOMContentLoaded', () => {
     mergeBtn.disabled    = on;
   }
 
+  const BAR_TITLES = new Set(['Bookmarks bar', 'Favorites bar', 'Barre des favoris', 'Lesezeichenleiste', 'Barra de favoritos', 'Barra dei preferiti']);
+  function isBarNode(n) { return !n.url && (BAR_TITLES.has(n.title) || n.id === '1' || n.parentId === '0'); }
+
   // Collect all URLs from a bookmark tree into a Set
   function collectUrls(nodes, set = new Set()) {
     for (const node of nodes) {
@@ -190,16 +193,17 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
 
+
         chrome.bookmarks.getChildren(BAR_ID, (existing) => {
           Promise.all(existing.map(c => new Promise(resolve => {
             chrome.bookmarks.removeTree(c.id, resolve);
           }))).then(() => {
             for (const topNode of data.bookmarks) {
-              if (!topNode.url && (topNode.title === 'Bookmarks bar' || topNode.title === 'Favorites bar' || topNode.id === '1')) {
+              if (isBarNode(topNode)) {
                 populateFolder(BAR_ID, topNode.children || []);
               }
             }
-            const barNode = data.bookmarks.find(n => !n.url && (n.title === 'Bookmarks bar' || n.title === 'Favorites bar' || n.id === '1'));
+            const barNode = data.bookmarks.find(isBarNode);
             const { bookmarks: bCount, folders: fCount } = countBookmarks(barNode ? barNode.children || [] : []);
             showStatus(`Downloaded "${profile}": ${bCount} bookmarks, ${fCount} folders.`, 'success');
             setSyncing(false);
@@ -263,7 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const added = { count: 0 };
 
           // Find bookmarks bar node in source profile
-          const barNode = data.bookmarks.find(n => !n.url && (n.title === 'Bookmarks bar' || n.title === 'Favorites bar' || n.id === '1'));
+          const barNode = data.bookmarks.find(isBarNode);
           const sourceNodes = barNode ? barNode.children || [] : [];
 
           mergeNodes(sourceNodes, BAR_ID, existingUrls, added);
