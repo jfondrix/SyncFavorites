@@ -4,13 +4,26 @@ function isBarNode(n) {
   return !n.url && (BAR_TITLES.has(n.title) || n.id === '1' || n.parentId === '0');
 }
 
+async function createBookmark(data) {
+  return new Promise(resolve => {
+    chrome.bookmarks.create(data, (result) => {
+      if (chrome.runtime.lastError) {
+        console.warn('bookmark create error:', chrome.runtime.lastError.message, data);
+        resolve(null);
+      } else {
+        resolve(result);
+      }
+    });
+  });
+}
+
 async function populateFolder(folderId, nodes) {
   for (const node of nodes) {
     if (node.url) {
-      await new Promise(resolve => chrome.bookmarks.create({ parentId: folderId, title: node.title, url: node.url }, resolve));
+      await createBookmark({ parentId: folderId, title: node.title, url: node.url });
     } else if (node.children && node.children.length > 0) {
-      const newFolder = await new Promise(resolve => chrome.bookmarks.create({ parentId: folderId, title: node.title }, resolve));
-      await populateFolder(newFolder.id, node.children);
+      const newFolder = await createBookmark({ parentId: folderId, title: node.title });
+      if (newFolder) await populateFolder(newFolder.id, node.children);
     }
   }
 }
