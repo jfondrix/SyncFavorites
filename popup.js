@@ -14,6 +14,21 @@ document.addEventListener('DOMContentLoaded', () => {
     statusDiv.className = 'status ' + (type || 'info');
   }
 
+  function countBookmarks(nodes) {
+    let bookmarks = 0, folders = 0;
+    for (const node of nodes) {
+      if (node.url) {
+        bookmarks++;
+      } else if (node.children) {
+        folders++;
+        const child = countBookmarks(node.children);
+        bookmarks += child.bookmarks;
+        folders   += child.folders;
+      }
+    }
+    return { bookmarks, folders };
+  }
+
   function setConnected(url, profile) {
     connDot.classList.add('connected');
     const display = url.replace(/^https?:\/\//, '');
@@ -71,6 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       chrome.bookmarks.getTree((rootNodes) => {
         const bookmarks = rootNodes[0].children;
+        const bookmarks_data = bookmarks;
 
         fetch(`${config.vpsUrl}/bookmarks/${profile}`, {
           method: 'PUT',
@@ -88,7 +104,8 @@ document.addEventListener('DOMContentLoaded', () => {
           return res.json();
         })
         .then(() => {
-          showStatus(`Uploaded to profile "${profile}".`, 'success');
+          const { bookmarks, folders } = countBookmarks(bookmarks_data);
+          showStatus(`Uploaded to "${profile}": ${bookmarks} bookmarks, ${folders} folders.`, 'success');
         })
         .catch((err) => {
           showStatus(`Upload failed: ${err.message}`, 'error');
@@ -153,7 +170,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 populateFolder(BAR_ID, topNode.children || []);
               }
             }
-            showStatus(`Bookmarks bar synced from profile "${profile}".`, 'success');
+            const barNode = data.bookmarks.find(n => !n.url && (n.title === 'Bookmarks bar' || n.title === 'Favorites bar' || n.id === '1'));
+            const { bookmarks: bCount, folders: fCount } = countBookmarks(barNode ? barNode.children || [] : []);
+            showStatus(`Downloaded "${profile}": ${bCount} bookmarks, ${fCount} folders.`, 'success');
             setSyncing(false);
           });
         });
