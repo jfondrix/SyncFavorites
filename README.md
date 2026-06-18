@@ -1,6 +1,6 @@
 # SyncFav — Self-Hosted Bookmark Sync Extension
 
-Sync your bookmarks across **Brave, Chrome, and Edge** using your own VPS. No third-party services, no accounts, full privacy.
+Sync your **bookmarks bar** across **Brave, Chrome, and Edge** using your own VPS. No third-party services, no accounts, full privacy.
 
 ---
 
@@ -10,9 +10,20 @@ This is the **browser extension** repo. The companion server repo is [SyncFavori
 
 ## How it works
 
-- The **browser extension** lets you upload and download your bookmarks to/from your server
-- The **server** stores your bookmarks as a JSON file on your VPS
+- The extension syncs only the **bookmarks bar** (not "Other bookmarks" or reading lists)
+- **Upload** sends your current bookmarks bar to the server, stored as a JSON file per profile
+- **Download** clears your bookmarks bar and replaces it with what's on the server
+- **Merge** adds bookmarks from another profile into your current bookmarks bar, skipping duplicates (by URL)
 - All requests are protected by a secret token you choose
+- Bookmarks are processed in the background — you can close the popup while it works
+
+> ⚠️ Always **Upload before Download** on a new device. Download will wipe your current bookmarks bar before replacing it.
+
+---
+
+## Multi-profile support
+
+Each device or browser can use a different **Profile Name** (e.g. `work`, `personal`, `laptop`). Profiles are stored separately on the server, so you can keep different sets of bookmarks and merge them selectively.
 
 ---
 
@@ -65,6 +76,8 @@ server {
     listen 80;
     server_name syncbookmarks.yourdomain.com;
 
+    client_max_body_size 20m;
+
     location / {
         proxy_pass http://localhost:3001;
         proxy_http_version 1.1;
@@ -95,8 +108,9 @@ certbot --nginx -d syncbookmarks.yourdomain.com
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | GET | `/health` | None | Health check |
-| GET | `/bookmarks` | Bearer token | Retrieve bookmarks |
-| PUT | `/bookmarks` | Bearer token | Upload bookmarks |
+| GET | `/privacy` | None | Privacy policy |
+| GET | `/bookmarks/:profile` | Bearer token | Retrieve bookmarks for a profile |
+| PUT | `/bookmarks/:profile` | Bearer token | Upload bookmarks for a profile |
 
 ---
 
