@@ -1,22 +1,24 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const vpsUrlInput   = document.getElementById('vpsUrl');
+  const vpsUrlInput    = document.getElementById('vpsUrl');
   const syncTokenInput = document.getElementById('syncToken');
-  const saveBtn       = document.getElementById('saveConfig');
-  const syncUpBtn     = document.getElementById('syncUp');
-  const syncDownBtn   = document.getElementById('syncDown');
-  const statusDiv     = document.getElementById('status');
-  const connDot       = document.getElementById('connDot');
-  const connLabel     = document.getElementById('connLabel');
+  const profileInput   = document.getElementById('profileName');
+  const saveBtn        = document.getElementById('saveConfig');
+  const syncUpBtn      = document.getElementById('syncUp');
+  const syncDownBtn    = document.getElementById('syncDown');
+  const statusDiv      = document.getElementById('status');
+  const connDot        = document.getElementById('connDot');
+  const connLabel      = document.getElementById('connLabel');
 
   function showStatus(text, type) {
     statusDiv.textContent = text;
     statusDiv.className = 'status ' + (type || 'info');
   }
 
-  function setConnected(url) {
+  function setConnected(url, profile) {
     connDot.classList.add('connected');
     const display = url.replace(/^https?:\/\//, '');
-    connLabel.textContent = display.length > 30 ? display.slice(0, 30) + '…' : display;
+    const label = (display.length > 22 ? display.slice(0, 22) + '…' : display) + (profile ? ` · ${profile}` : '');
+    connLabel.textContent = label;
   }
 
   function setDisconnected() {
@@ -25,48 +27,52 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function setSyncing(on) {
-    syncUpBtn.disabled   = on;
+    syncUpBtn.disabled  = on;
     syncDownBtn.disabled = on;
   }
 
   // Load saved config on open
-  chrome.storage.local.get(['vpsUrl', 'syncToken'], (result) => {
-    if (result.vpsUrl)    vpsUrlInput.value    = result.vpsUrl;
-    if (result.syncToken) syncTokenInput.value = result.syncToken;
-    if (result.vpsUrl && result.syncToken) setConnected(result.vpsUrl);
+  chrome.storage.local.get(['vpsUrl', 'syncToken', 'profileName'], (result) => {
+    if (result.vpsUrl)      vpsUrlInput.value    = result.vpsUrl;
+    if (result.syncToken)   syncTokenInput.value = result.syncToken;
+    if (result.profileName) profileInput.value   = result.profileName;
+    if (result.vpsUrl && result.syncToken) setConnected(result.vpsUrl, result.profileName);
   });
 
   // Save config
   saveBtn.addEventListener('click', () => {
-    const vpsUrl    = vpsUrlInput.value.trim().replace(/\/$/, '');
-    const syncToken = syncTokenInput.value.trim();
+    const vpsUrl      = vpsUrlInput.value.trim().replace(/\/$/, '');
+    const syncToken   = syncTokenInput.value.trim();
+    const profileName = profileInput.value.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '') || 'default';
 
     if (!vpsUrl || !syncToken) {
-      showStatus('Both VPS URL and token are required.', 'error');
+      showStatus('VPS URL and token are required.', 'error');
       return;
     }
 
-    chrome.storage.local.set({ vpsUrl, syncToken }, () => {
-      setConnected(vpsUrl);
+    chrome.storage.local.set({ vpsUrl, syncToken, profileName }, () => {
+      profileInput.value = profileName;
+      setConnected(vpsUrl, profileName);
       showStatus('Configuration saved.', 'success');
     });
   });
 
   // Upload bookmarks
   syncUpBtn.addEventListener('click', () => {
-    chrome.storage.local.get(['vpsUrl', 'syncToken'], (config) => {
+    chrome.storage.local.get(['vpsUrl', 'syncToken', 'profileName'], (config) => {
       if (!config.vpsUrl || !config.syncToken) {
         showStatus('Save your server configuration first.', 'error');
         return;
       }
 
+      const profile = config.profileName || 'default';
       setSyncing(true);
       showStatus('Reading bookmarks…', 'info');
 
       chrome.bookmarks.getTree((rootNodes) => {
         const bookmarks = rootNodes[0].children;
 
-        fetch(`${config.vpsUrl}/bookmarks`, {
+        fetch(`${config.vpsUrl}/bookmarks/${profile}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -82,7 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return res.json();
         })
         .then(() => {
-          showStatus('Bookmarks uploaded successfully.', 'success');
+          showStatus(`Uploaded to profile "${profile}".`, 'success');
         })
         .catch((err) => {
           showStatus(`Upload failed: ${err.message}`, 'error');
@@ -94,16 +100,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Download bookmarks
   syncDownBtn.addEventListener('click', () => {
-    chrome.storage.local.get(['vpsUrl', 'syncToken'], (config) => {
+    chrome.storage.local.get(['vpsUrl', 'syncToken', 'profileName'], (config) => {
       if (!config.vpsUrl || !config.syncToken) {
         showStatus('Save your server configuration first.', 'error');
         return;
       }
 
+      const profile = config.profileName || 'default';
       setSyncing(true);
       showStatus('Downloading from server…', 'info');
 
-      fetch(`${config.vpsUrl}/bookmarks`, {
+      fetch(`${config.vpsUrl}/bookmarks/${profile}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${config.syncToken}`
@@ -118,12 +125,11 @@ document.addEventListener('DOMContentLoaded', () => {
       })
       .then((data) => {
         if (!data.bookmarks || data.bookmarks.length === 0) {
-          showStatus('No bookmarks found on server.', 'error');
+          showStatus(`No bookmarks found for profile "${profile}".`, 'error');
           setSyncing(false);
           return;
         }
 
-        // Bookmarks bar has a fixed parentId of "1" in Chromium browsers
         const BAR_ID = '1';
 
         function populateFolder(folderId, nodes) {
@@ -138,18 +144,16 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
 
-        // Clear existing bookmarks bar contents then repopulate
         chrome.bookmarks.getChildren(BAR_ID, (existing) => {
           Promise.all(existing.map(c => new Promise(resolve => {
             chrome.bookmarks.removeTree(c.id, resolve);
           }))).then(() => {
             for (const topNode of data.bookmarks) {
-              // Upload sends the full tree; find the bookmarks bar node and use its children
               if (!topNode.url && (topNode.title === 'Bookmarks bar' || topNode.title === 'Favorites bar' || topNode.id === '1')) {
                 populateFolder(BAR_ID, topNode.children || []);
               }
             }
-            showStatus('Bookmarks bar synced successfully.', 'success');
+            showStatus(`Bookmarks bar synced from profile "${profile}".`, 'success');
             setSyncing(false);
           });
         });
@@ -159,12 +163,5 @@ document.addEventListener('DOMContentLoaded', () => {
         setSyncing(false);
       });
     });
-  });
-
-  // Deselect text inputs on click outside
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('input')) {
-      syncTokenInput.type = 'password';
-    }
   });
 });
