@@ -121,6 +121,11 @@
       color: #fff;
     }
 
+    .btn-merge {
+      background: #7c3aed;
+      color: #fff;
+    }
+
     .status {
       margin-top: 12px;
       padding: 8px 10px;
@@ -188,6 +193,15 @@
     <div class="section-title">Sync Bookmarks</div>
     <button class="btn btn-upload" id="syncUp">↑ Upload to Server</button>
     <button class="btn btn-download" id="syncDown">↓ Download from Server</button>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Merge Profiles</div>
+    <div class="input-group">
+      <label>Source Profile</label>
+      <input type="text" id="mergeProfile" placeholder="profile to merge from">
+    </div>
+    <button class="btn btn-merge" id="mergeBtn">⇌ Merge into Current Profile</button>
   </div>
 
   <div class="status" id="status"></div>

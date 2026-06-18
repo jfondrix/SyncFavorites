@@ -5,6 +5,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveBtn        = document.getElementById('saveConfig');
   const syncUpBtn      = document.getElementById('syncUp');
   const syncDownBtn    = document.getElementById('syncDown');
+  const mergeBtn       = document.getElementById('mergeBtn');
+  const mergeProfileInput = document.getElementById('mergeProfile');
   const statusDiv      = document.getElementById('status');
   const connDot        = document.getElementById('connDot');
   const connLabel      = document.getElementById('connLabel');
@@ -42,8 +44,35 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function setSyncing(on) {
-    syncUpBtn.disabled  = on;
+    syncUpBtn.disabled   = on;
     syncDownBtn.disabled = on;
+    mergeBtn.disabled    = on;
+  }
+
+  // Collect all URLs from a bookmark tree into a Set
+  function collectUrls(nodes, set = new Set()) {
+    for (const node of nodes) {
+      if (node.url) set.add(node.url);
+      if (node.children) collectUrls(node.children, set);
+    }
+    return set;
+  }
+
+  // Add only bookmarks whose URLs are not already in existingUrls
+  function mergeNodes(nodes, parentId, existingUrls, added) {
+    for (const node of nodes) {
+      if (node.url) {
+        if (!existingUrls.has(node.url)) {
+          chrome.bookmarks.create({ parentId, title: node.title, url: node.url });
+          existingUrls.add(node.url);
+          added.count++;
+        }
+      } else if (node.children && node.children.length > 0) {
+        chrome.bookmarks.create({ parentId, title: node.title }, (newFolder) => {
+          mergeNodes(node.children, newFolder.id, existingUrls, added);
+        });
+      }
+    }
   }
 
   // Load saved config on open
@@ -179,6 +208,74 @@ document.addEventListener('DOMContentLoaded', () => {
       })
       .catch((err) => {
         showStatus(`Download failed: ${err.message}`, 'error');
+        setSyncing(false);
+      });
+    });
+  });
+
+  // Merge from another profile into current bookmarks bar
+  mergeBtn.addEventListener('click', () => {
+    chrome.storage.local.get(['vpsUrl', 'syncToken', 'profileName'], (config) => {
+      if (!config.vpsUrl || !config.syncToken) {
+        showStatus('Save your server configuration first.', 'error');
+        return;
+      }
+
+      const sourceProfile = mergeProfileInput.value.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
+      const currentProfile = config.profileName || 'default';
+
+      if (!sourceProfile) {
+        showStatus('Enter the source profile name to merge from.', 'error');
+        return;
+      }
+
+      if (sourceProfile === currentProfile) {
+        showStatus('Source and current profile are the same.', 'error');
+        return;
+      }
+
+      setSyncing(true);
+      showStatus(`Fetching profile "${sourceProfile}"…`, 'info');
+
+      fetch(`${config.vpsUrl}/bookmarks/${sourceProfile}`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${config.syncToken}` }
+      })
+      .then(async (res) => {
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `Server returned ${res.status}`);
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (!data.bookmarks || data.bookmarks.length === 0) {
+          showStatus(`Profile "${sourceProfile}" is empty.`, 'error');
+          setSyncing(false);
+          return;
+        }
+
+        const BAR_ID = '1';
+
+        chrome.bookmarks.getTree((rootNodes) => {
+          // Collect all existing URLs from the full tree
+          const existingUrls = collectUrls(rootNodes[0].children);
+          const added = { count: 0 };
+
+          // Find bookmarks bar node in source profile
+          const barNode = data.bookmarks.find(n => !n.url && (n.title === 'Bookmarks bar' || n.title === 'Favorites bar' || n.id === '1'));
+          const sourceNodes = barNode ? barNode.children || [] : [];
+
+          mergeNodes(sourceNodes, BAR_ID, existingUrls, added);
+
+          setTimeout(() => {
+            showStatus(`Merged "${sourceProfile}" → "${currentProfile}": ${added.count} new bookmarks added.`, 'success');
+            setSyncing(false);
+          }, 500);
+        });
+      })
+      .catch((err) => {
+        showStatus(`Merge failed: ${err.message}`, 'error');
         setSyncing(false);
       });
     });
