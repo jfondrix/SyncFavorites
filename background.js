@@ -30,7 +30,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
 
       const BAR_ID = '1';
-      const existing = await new Promise(resolve => chrome.bookmarks.getChildren(BAR_ID, resolve));
+      const existing = await new Promise(resolve => chrome.bookmarks.getChildren(BAR_ID, resolve)) || [];
       await Promise.all(existing.map(c => new Promise(resolve => chrome.bookmarks.removeTree(c.id, resolve))));
 
       const barNode = data.bookmarks.find(isBarNode);
